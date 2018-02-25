@@ -108,3 +108,11 @@ func (m metadata) IsEmpty(s Slice) (bool, error) {
 	}
 	return true, nil
 }
+
+func (m *metadata) correct(maxCells int) {
+	for _, v := range m.Slices {
+		// TODO update slice if substitution was made
+		// TODO iterate over slices till no more changes can be made
+		gogo(v, m.Index, maxCells)
+	}
+}
