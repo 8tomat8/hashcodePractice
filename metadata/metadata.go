@@ -1,22 +1,32 @@
 package metadata
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
 // metadata is type to represent current processing state [rows][cols]int
 // -1 is unused element
 // 0-N - ids of slices
-type metadata [][]int
+type metadata struct {
+	currentID int
+	mu        *sync.RWMutex
+
+	Index  [][]int
+	Slices []Slice
+}
 
 type Slice struct {
+	ID int
 	R1 int
 	C1 int
 	R2 int
 	C2 int
 }
 
-var ErrOutOfIndex = errors.New("not valid index")
+const Empty = -1
 
-var currentID int
+var ErrOutOfIndex = errors.New("not valid index")
 
 func New(rows, cols int) metadata {
 	if rows == 0 || cols == 0 {
@@ -27,64 +37,74 @@ func New(rows, cols int) metadata {
 	for r := 0; r < rows; r++ {
 		data[r] = make([]int, cols)
 		for c := 0; c < cols; c++ {
-			data[r][c] = -1
+			data[r][c] = Empty
 		}
 	}
-	return data
+	return metadata{Index: data, mu: &sync.RWMutex{}}
 }
 
-func (m metadata) Save(s Slice) error {
+func (m *metadata) Save(s Slice) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if s.R1 > s.R2 {
 		s.R1, s.R2 = s.R2, s.R1
 	}
+
 	if s.C1 > s.C2 {
 		s.C1, s.C2 = s.C2, s.C1
 	}
 
-	if s.R2 > len(m) || s.C2 > len(m[0]) {
+	if s.R2 > len(m.Index) || s.C2 > len(m.Index[0]) {
 		return ErrOutOfIndex
 	}
 
 	for r := s.R1; r <= s.R2; r++ {
 		for c := s.C1; c <= s.C2; c++ {
-			m[r][c] = currentID
+			m.Index[r][c] = m.currentID
 		}
 	}
+	s.ID = m.currentID
+	m.Slices = append(m.Slices, s)
 
-	currentID++
+	m.currentID++
 	return nil
 }
 
 func (m metadata) Get(row, col int) Slice {
-	var slice Slice
-	found := [][2]int{{row, col}}
-	for _, cords := range found {
-		found = append(found, m.findSame(cords[0], cords[1])...)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-		// To find coordinates of high angles
-		switch {
-		case slice.R1 > cords[0]:
-			slice.R1 = cords[0]
-		case slice.R2 < cords[0]:
-			slice.R2 = cords[0]
-		case slice.C1 > cords[1]:
-			slice.C1 = cords[1]
-		case slice.C2 < cords[1]:
-			slice.C2 = cords[1]
-		}
+	id := m.Index[row][col]
+	if id == Empty {
+		return Slice{Empty, row, col, row, col}
 	}
-	return slice
+
+	return m.Slices[id]
 }
 
-func (m metadata) findSame(row, col int) [][2]int {
-	var foundElements [][2]int
-	id := m[row][col]
-	toCheck := [4][2]int{{row, col - 1}, {row, col + 1}, {row - 1, col}, {row + 1, col}}
+func (m metadata) IsEmpty(s Slice) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	for _, cords := range toCheck {
-		if m[cords[0]][cords[1]] == id {
-			foundElements = append(foundElements, [2]int{cords[0], cords[1]})
+	if s.R1 > s.R2 {
+		s.R1, s.R2 = s.R2, s.R1
+	}
+
+	if s.C1 > s.C2 {
+		s.C1, s.C2 = s.C2, s.C1
+	}
+
+	if s.R2 > len(m.Index) || s.C2 > len(m.Index[0]) {
+		return false, ErrOutOfIndex
+	}
+
+	for r := s.R1; r <= s.R2; r++ {
+		for c := s.C1; c <= s.C2; c++ {
+			if m.Index[r][c] != Empty {
+				return false, nil
+			}
 		}
 	}
-	return foundElements
+	return true, nil
 }

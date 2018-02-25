@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"sync"
+
 	"github.com/matryer/is"
 )
 
@@ -36,17 +38,23 @@ func TestNew(t *testing.T) {
 			name: "Valid",
 			args: args{5, 4},
 			want: metadata{
-				{-1, -1, -1, -1},
-				{-1, -1, -1, -1},
-				{-1, -1, -1, -1},
-				{-1, -1, -1, -1},
-				{-1, -1, -1, -1},
+				Index: [][]int{
+					{-1, -1, -1, -1},
+					{-1, -1, -1, -1},
+					{-1, -1, -1, -1},
+					{-1, -1, -1, -1},
+					{-1, -1, -1, -1},
+				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(tt.args.rows, tt.args.cols); !reflect.DeepEqual(got, tt.want) {
+			if got := New(tt.args.rows, tt.args.cols); !reflect.DeepEqual(got.Index, tt.want.Index) {
+				t.Errorf("New() = %v, want %v", got, tt.want)
+			}
+
+			if got := New(tt.args.rows, tt.args.cols); !reflect.DeepEqual(got.Slices, tt.want.Slices) {
 				t.Errorf("New() = %v, want %v", got, tt.want)
 			}
 		})
@@ -54,7 +62,7 @@ func TestNew(t *testing.T) {
 }
 
 func Test_metadata_Save(t *testing.T) {
-	iss := is.New(t)
+	is := is.New(t)
 	tests := []struct {
 		name     string
 		m        metadata
@@ -64,57 +72,81 @@ func Test_metadata_Save(t *testing.T) {
 	}{
 		{"Valid",
 			metadata{
-				{1, 2, 2, 3},
-				{1, 2, 2, 3},
-				{1, 2, 2, 3},
+				mu:        &sync.RWMutex{},
+				currentID: 0,
+				Index: [][]int{
+					{1, 2, 2, 3},
+					{1, 2, 2, 3},
+					{1, 2, 2, 3},
+				},
 			},
 			metadata{
-				{1, 2, 2, 3},
-				{1, 2, 0, 0},
-				{1, 2, 0, 0},
+				currentID: 1,
+				Index: [][]int{
+					{1, 2, 2, 3},
+					{1, 2, 0, 0},
+					{1, 2, 0, 0},
+				},
 			},
 			nil,
-			Slice{1, 2, 2, 3},
+			Slice{0, 1, 2, 2, 3},
 		},
 		{"Zero size",
-			metadata{},
+			metadata{mu: &sync.RWMutex{}},
 			metadata{},
 			ErrOutOfIndex,
-			Slice{2, 3, 2, 3},
+			Slice{0, 2, 3, 2, 3},
 		},
 		{"Single column",
 			metadata{
-				{1, 2, 2, 3},
-				{1, 2, 2, 3},
-				{1, 2, 2, 3},
+				mu:        &sync.RWMutex{},
+				currentID: 1,
+				Index: [][]int{
+					{1, 2, 2, 3},
+					{1, 2, 2, 3},
+					{1, 2, 2, 3},
+				},
 			},
 			metadata{
-				{1, 2, 2, 3},
-				{1, 2, 2, 1},
-				{1, 2, 2, 1},
+				currentID: 2,
+				Index: [][]int{
+					{1, 2, 2, 3},
+					{1, 2, 2, 1},
+					{1, 2, 2, 1},
+				},
 			},
 			nil,
-			Slice{1, 3, 2, 3},
+			Slice{0, 1, 3, 2, 3},
 		},
 		{"Single row",
 			metadata{
-				{1, 2, 2, 3},
-				{1, 2, 2, 3},
-				{1, 2, 2, 3},
+				mu:        &sync.RWMutex{},
+				currentID: 2,
+				Index: [][]int{
+					{1, 2, 2, 3},
+					{1, 2, 2, 3},
+					{1, 2, 2, 3},
+				},
 			},
 			metadata{
-				{1, 2, 2, 3},
-				{1, 2, 2, 3},
-				{1, 2, 2, 2},
+				currentID: 3,
+				Index: [][]int{
+					{1, 2, 2, 3},
+					{1, 2, 2, 3},
+					{1, 2, 2, 2},
+				},
 			},
 			nil,
-			Slice{2, 1, 2, 3},
+			Slice{0, 2, 1, 2, 3},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.m.Save(tt.args)
-			iss.Equal(tt.m, tt.expected)
+			if !reflect.DeepEqual(tt.m.Index, tt.expected.Index) {
+				t.Errorf("Expected %+v, got %+v", tt.expected.Index, tt.m.Index)
+			}
+			is.Equal(tt.m.currentID, tt.expected.currentID)
 		})
 	}
 }
