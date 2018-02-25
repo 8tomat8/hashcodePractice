@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -24,28 +23,22 @@ func (d *Data) Fill(src io.Reader) error {
 		return errors.Wrap(err, "reading first line from input source of pizza data")
 	}
 
-	n, err := fmt.Sscanf(scanner.Text(), "%d %d %d %d", d.R, d.C, d.L, d.H)
+	n, err := fmt.Sscanf(scanner.Text(), "%d %d %d %d", &d.R, &d.C, &d.L, &d.H)
 	if err != nil || n != 4 {
 		return errors.Wrapf(err, "first line missed some important valuest, should contain 4 separate number (%d was readed)", n)
 	}
 
 	d.P = make([][]bool, d.R)
-	rowFormat := strings.Repeat("%c", d.C)
 	rowSlice := make([]byte, d.C)
 	i := 0 // row index
 	for scanner.Scan() {
-		n, err = fmt.Sscanf(scanner.Text(), rowFormat, rowSlice)
-		if err != nil || n != d.C {
-			return errors.Wrapf(err, "line[%d] missed some important valuest, should contain %d chars (%d was readed)", i, d.C, n)
-		}
-
 		d.P[i] = make([]bool, d.C)
+		rowSlice = scanner.Bytes()
 		for j, ch := range rowSlice {
 			if ch == 'T' {
 				d.P[i][j] = true
 			}
 		}
-
 		i++
 	}
 
